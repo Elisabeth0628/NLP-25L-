@@ -20,9 +20,6 @@ comet_model_path = download_model("Unbabel/wmt22-comet-da")
 comet_model = load_from_checkpoint(comet_model_path)
 
 translations = []
-sacrebleu_refs = []
-sacrebleu_preds = []
-comet_data = []
 
 for idx, row in df.iterrows():
     src = str(row["English"])
@@ -49,20 +46,22 @@ for idx, row in df.iterrows():
     decoded = tokenizer.decode(outputs[0], skip_special_tokens=True)
     translated = decoded.split("Polish:")[-1].strip()
 
-    translations.append(f"English: {src}\nPredicted: {translated}\nReference: {ref}\n\n")
-    sacrebleu_preds.append(translated)
-    sacrebleu_refs.append([ref])  # list of references
-    comet_data.append({"src": src, "mt": translated, "ref": ref})
+    # SacreBLEU
+    bleu = sacrebleu.sentence_bleu(translated, [ref])
 
-# SacreBLEU
-bleu = sacrebleu.corpus_bleu(sacrebleu_preds, sacrebleu_refs)
+    # COMET
+    comet_input = [{"src": src, "mt": translated, "ref": ref}]
+    comet_score = comet_model.predict(comet_input, batch_size=1, gpus=1 if torch.cuda.is_available() else 0)
 
-# COMET
-comet_score = comet_model.predict(comet_data, batch_size=8, gpus=1 if torch.cuda.is_available() else 0)
-comet_avg = sum(comet_score.scores) / len(comet_score.scores)
+    translations.append(
+        f"English: {src}\n"
+        f"Predicted: {translated}\n"
+        f"Reference: {ref}\n"
+        f"SacreBLEU: {bleu.score:.2f}\n"
+        f"COMET: {comet_score.scores[0]:.4f}\n\n"
+    )
 
-with open("translation_with_metrics_4.txt", "w", encoding="utf-8") as f:
+with open("translation_with_metrics_individual.txt", "w", encoding="utf-8") as f:
     f.writelines(translations)
-    f.write(f"\n---\nSacreBLEU: {bleu.score:.2f}\nCOMET: {comet_avg:.4f}\n")
 
-print(f"Translations complete with metrics! Output saved to 'translation_with_metrics_4.txt'")
+print("Translations with individual metrics complete! Output saved to 'translation_with_metrics_individual.txt'")
