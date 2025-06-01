@@ -10,7 +10,8 @@ model = AutoModelForCausalLM.from_pretrained(model_id)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-csv_path = "random_english_2.csv"
+# Zmiana na nowy plikk zawierajacy 100 zdan do przetlumaczenia
+csv_path = "100_sentences.csv"
 df = pd.read_csv(csv_path, sep=';')
 
 if not {"English", "Polish"}.issubset(df.columns):
@@ -61,7 +62,7 @@ bleu = sacrebleu.corpus_bleu(sacrebleu_preds, sacrebleu_refs)
 comet_score = comet_model.predict(comet_data, batch_size=8, gpus=1 if torch.cuda.is_available() else 0)
 comet_avg = sum(comet_score.scores) / len(comet_score.scores)
 
-with open("translation_with_metrics_4.txt", "w", encoding="utf-8") as f:
+with open("translation_100_with_parameters.txt", "w", encoding="utf-8") as f:
     f.writelines(translations)
     f.write(f"\n---\nSacreBLEU: {bleu.score:.2f}\nCOMET: {comet_avg:.4f}\n")
 
