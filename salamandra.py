@@ -1,23 +1,59 @@
+import csv
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
+import pandas as pd
+from pathlib import Path
 
-model_id = 'BSC-LT/salamandraTA-2b'
+MODEL_ID = "BSC-LT/salamandraTA-2b"
+SRC_LANG = "English"
+TGT_LANG = "Polish"
+FILE_PATH = "100_sentences.csv"
+INPUT_CSV = Path(FILE_PATH).expanduser().resolve()
+OUTPUT_CSV = INPUT_CSV.with_name(INPUT_CSV.stem + "_translated2.csv")
 
-tokenizer = AutoTokenizer.from_pretrained(model_id)
-model = AutoModelForCausalLM.from_pretrained(model_id)
+tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
+model = AutoModelForCausalLM.from_pretrained(MODEL_ID)
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model.to(device)
 
-src_lang_code = 'English'
-tgt_lang_code = 'Polish'
-sentence = "She got hiccups and couldn't get rid of them for three hours."
+def translate(sentence: str) -> str:
+    prompt = f"[{SRC_LANG}] {sentence} \n[{TGT_LANG}]"
+    input_ids = tokenizer(prompt, return_tensors="pt").input_ids.to(device)
+    with torch.no_grad():
+        output_ids = model.generate(
+            input_ids
+        )
+    return tokenizer.decode(output_ids[0, input_ids.shape[1]:], skip_special_tokens=True).strip()
 
-prompt = f'[{src_lang_code}] {sentence} \n[{tgt_lang_code}]'
 
-input_ids = tokenizer(prompt, return_tensors='pt').input_ids.to(device)
-output_ids = model.generate(input_ids, num_beams=15, length_penalty=1.3, no_repeat_ngram_size=3, max_new_tokens=256, early_stopping=True)
-input_length = input_ids.shape[1]
+def read_csv(path: Path) -> pd.DataFrame:
+    print(f"Reading from {path}")
+    with open(path, "r", encoding="utf-8", newline="") as f:
+        sample = f.read(2048)
+        f.seek(0)
+        dialect = csv.Sniffer().sniff(sample)
+        delimiter = dialect.delimiter
+        quotechar = dialect.quotechar
+    return pd.read_csv(path, header=None, sep=delimiter, quotechar=quotechar, engine="python", dtype=str)
 
-generated_text = tokenizer.decode(output_ids[0, input_length:], skip_special_tokens=True).strip()
-print(generated_text)
+try:
+    df = read_csv(INPUT_CSV)
+except Exception as e:
+    print("CSV read failed:", e)
+    raise SystemExit(1)
+
+missing_cols = 3 - df.shape[1]
+if missing_cols > 0:
+    for _ in range(missing_cols):
+        df[df.shape[1]] = ""
+
+print("Translating")
+
+df.iloc[:, 2] = df.iloc[:, 0].apply(translate)
+
+print(f"Saving to {OUTPUT_CSV}")
+
+df.to_csv(OUTPUT_CSV, index=False, header=False)
+
+print("Done.")
